@@ -27,7 +27,7 @@ jobs:
     # واختبارات التكامل تُقيم قاعدة مضمَّنة وتضبط DATABASE_URL بنفسها.
     env:
       NODE_ENV: test
-      LOG_LEVEL: silent
+      LOG_LEVEL: error
       DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci_placeholder
     steps:
       - uses: actions/checkout@v4
