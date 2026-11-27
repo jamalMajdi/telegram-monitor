@@ -21,6 +21,14 @@ jobs:
     name: البوابة الكاملة
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # تحميل البيئة يتحقّق من المتغيّرات الإلزامية عند الاستيراد (وهذا سلوك مقصود في
+    # الإنتاج). محلياً يغطّي `apps/api/.env` غير المتعقَّب هذا الشرط؛ وفي CI لا يوجد
+    # ملف ⇒ نمرّر قيمة **وهمية** لـDATABASE_URL فقط. لا اختبار وحدة يتصل بقاعدة،
+    # واختبارات التكامل تُقيم قاعدة مضمَّنة وتضبط DATABASE_URL بنفسها.
+    env:
+      NODE_ENV: test
+      LOG_LEVEL: silent
+      DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci_placeholder
     steps:
       - uses: actions/checkout@v4
 
