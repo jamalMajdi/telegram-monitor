@@ -1,0 +1,9 @@
+[Unit]
+Description=TG Monitor — نبضة منع استعادة الموارد الخاملة (Oracle Always Free)
+Documentation=file:/opt/tg-monitor/src/docs/deploy-production.md
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/tg-keepalive
+Nice=19
+IOSchedulingClass=idle

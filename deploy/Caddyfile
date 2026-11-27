@@ -1,0 +1,54 @@
+# Caddy — البوابة العامة الوحيدة.
+#
+# - TLS تلقائي (Let's Encrypt) عبر HTTP-01 على المنفذ 80: يكفي أن يشير سجل A للنطاق إلى IP الخادم.
+#   يعمل مع نطاق مجاني من DuckDNS بلا أي إعداد إضافي.
+# - الواجهة والـAPI على أصل واحد (نفس النطاق) ⇒ لا CORS ولا SameSite=None.
+# - الترويسات أدناه طبقة ثانية بعد helmet داخل التطبيق (دفاع بالعمق، لا ازدواج ضار).
+
+{
+	email {$ACME_EMAIL}
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# حدّ حجم الطلب: التطبيق لا يقبل ملفات مرفوعة؛ 2MB سقف سخي وآمن.
+	request_body {
+		max_size 2MB
+	}
+
+	# فحوص الصحة تُخدم بلا تسجيل ضجيج في سجلات الوصول.
+	@health path /healthz /readyz
+	handle @health {
+		reverse_proxy api:4000
+	}
+
+	handle {
+		reverse_proxy api:4000 {
+			# تمرير IP الحقيقي للعميل (التطبيق يفعّل trust proxy في الإنتاج).
+			header_up X-Real-IP {remote_host}
+			health_uri /healthz
+			health_interval 30s
+		}
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 20mb
+			roll_keep 5
+		}
+		format json
+	}
+}

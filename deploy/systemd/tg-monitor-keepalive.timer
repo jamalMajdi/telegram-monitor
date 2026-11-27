@@ -1,0 +1,11 @@
+[Unit]
+Description=TG Monitor — نبضة يومية
+
+[Timer]
+# يومياً في وقت غير الذروة، مع تأخير عشوائي حتى لا تتزامن الآلات.
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=45m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

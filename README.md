@@ -52,6 +52,23 @@ npm run dev:web           # http://localhost:5173
 
 ---
 
+## النشر في الإنتاج
+
+الحزمة تعمل كما هي على آلة واحدة مجانية (Oracle Cloud Always Free) أو أي VPS، عبر Docker Compose:
+
+```bash
+git clone https://github.com/jamalMajdi/telegram-monitor.git ~/tg-src
+sudo bash ~/tg-src/deploy/scripts/bootstrap.sh     # يولّد الأسرار محلياً + .env بصلاحية 600
+sudo nano /opt/tg-monitor/.env                     # 6 قيم CHANGE_ME فقط
+sudo bash /opt/tg-monitor/src/deploy/scripts/deploy.sh build
+```
+
+الدليل الكامل خطوة بخطوة (نطاق مجاني، TLS تلقائي، Gmail، CI/CD، نسخ احتياطي/استعادة، جدول أعطال):
+**`docs/deploy-production.md`** — والمبررات بالأرقام في `docs/hosting-plan.md`.
+
+المكوّنات: `Dockerfile` · `docker-compose.prod.yml` (Caddy + api + postgres + backup) ·
+`deploy/Caddyfile` · `deploy/scripts/*` · `.github/workflows/{ci,deploy}.yml`.
+
 ## البريد الصادر (P0)
 
 البريد **مُعطَّل افتراضياً وبأمان**: بلا `SMTP_HOST` تبقى الرسائل `pending` في

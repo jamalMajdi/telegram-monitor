@@ -1,0 +1,151 @@
+# TG Monitor — حزمة الإنتاج (Docker Compose)
+#
+# تعمل كما هي على: Oracle Cloud Always Free (ARM64) · أي VPS (amd64/arm64) · Northflank
+# (المسار المكافئ موثّق في docs/deploy-production.md، ولن تحتاج هذا الملف هناك).
+#
+# المبدأ: البوابة العامة الوحيدة هي Caddy (80/443). لا يُنشر منفذ الـAPI ولا PostgreSQL
+# إلى الإنترنت إطلاقاً — لا `ports` لهما، فقط شبكة داخلية.
+#
+# التشغيل:
+#   docker compose --env-file .env -f docker-compose.prod.yml up -d
+#
+# والملف `.env` (صلاحية 600) هو المصدر الوحيد للأسرار — ولا يدخل المستودع أبداً.
+
+name: tg-monitor
+
+services:
+  # ── قاعدة البيانات ─────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-telegram_monitor}
+      POSTGRES_USER: ${POSTGRES_USER:-tgmon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD مطلوب في .env}
+      # مقارنة النصوص وترتيبها في نسخة عربية: C.utf8 آمن ومتاح دائماً في الصورة.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.utf8"
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=60
+      - -c
+      - log_min_duration_statement=2000
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tgmon} -d ${POSTGRES_DB:-telegram_monitor}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── الترحيلات: خدمة تُنفَّذ مرة واحدة ثم تنتهي ────────────────────────────
+  # فصلها عن الـAPI يمنع تنفيذ ترحيلين متوازيين عند إعادة التشغيل، ويجعل فشل
+  # الترحيل يوقف النشر بوضوح بدل أن يُخفيه إعادة تشغيل تلقائية.
+  migrate:
+    image: ${IMAGE_REPO:-tg-monitor-api}:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "dist/db/migrate.js"]
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-tgmon}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-telegram_monitor}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    logging: *logging
+
+  # ── المحرّك: API + عامل الصندوق + اتصال MTProto + خادم الواجهة ─────────────
+  api:
+    image: ${IMAGE_REPO:-tg-monitor-api}:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: "4000"
+      WEB_DIST_DIR: /app/apps/web/dist
+      DATABASE_URL: postgres://${POSTGRES_USER:-tgmon}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-telegram_monitor}
+      # أصل واحد: الواجهة والـAPI على نفس النطاق ⇒ كوكي SameSite=lax بلا CORS.
+      APP_ORIGIN: https://${DOMAIN:?DOMAIN مطلوب في .env}
+      APP_PUBLIC_URL: https://${DOMAIN}
+      COOKIE_SECURE: auto
+      SESSION_COOKIE_SAMESITE: lax
+      DEV_EXPOSE_RESET_TOKEN: "false"
+      AUTH_BEARER_FALLBACK: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    # سقف ذاكرة صريح: خطأ في الكود لا يبتلع ذاكرة الآلة كلها.
+    mem_limit: 1500m
+    logging: *logging
+
+  # ── البوابة: TLS تلقائي + ترويسات أمان ────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3 (اختياري؛ يُتجاهل إن حُجب UDP)
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN مطلوب في .env}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    logging: *logging
+
+  # ── النسخ الاحتياطي اليومي (داخل الحزمة ⇒ يعمل على أي منصة) ────────────────
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-telegram_monitor}
+      PGUSER: ${POSTGRES_USER:-tgmon}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      - ./backups:/backups
+      - ./deploy/scripts/backup-container.sh:/usr/local/bin/backup.sh:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "[backup] بدء الدورة: كل ${BACKUP_INTERVAL_SECONDS} ثانية، احتفاظ ${BACKUP_KEEP_DAYS} يوماً"
+        while true; do
+          /usr/local/bin/backup.sh || echo "[backup] فشلت النسخة — ستُعاد في الدورة التالية"
+          sleep "$${BACKUP_INTERVAL_SECONDS}"
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 256m
+    logging: *logging
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

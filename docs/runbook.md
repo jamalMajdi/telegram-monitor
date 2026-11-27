@@ -586,6 +586,17 @@ select d.id, d.status, p.part_index, p.status, p.last_error_code
  order by d.created_at desc limit 20;
 ```
 
+## 20) النشر بالحاويات (Docker Compose)
+
+الدليل التنفيذي: `docs/deploy-production.md` (Oracle Always Free + DuckDNS + Gmail)، والمبررات:
+`docs/hosting-plan.md`. الملفات: `Dockerfile` · `docker-compose.prod.yml` · `deploy/Caddyfile`.
+
+ملاحظتان لا تُنسيا:
+- **مسارا الفحص الفعليان** هما `/healthz` (حياة) و`/readyz` (جهوزية القاعدة والعامل).
+  أي مسار آخر غير موجود يُعيد صفحة الواجهة برمز 200 (SPA) — فلا تراقب مساراً مخترعاً.
+- النسخ الاحتياطي داخل الحزمة يستخدم `deploy/scripts/backup-container.sh` (يتحمّق بالبصمة
+  SHA-256 وبفهرس pg_restore)، بينما `deploy/scripts/backup.sh` يبقى لمسار المضيف/systemd.
+
 ## 19) البريد الصادر والتنبيهات والفشل المتكرر (P0 — 2026-11)
 
 المرجع الكامل: `docs/p0-implementation-report-2026-11.md`. ما يهم المشغّل:
