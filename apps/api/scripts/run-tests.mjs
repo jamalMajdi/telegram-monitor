@@ -22,6 +22,21 @@ const testDir = resolve(import.meta.dirname, '..', 'test');
 const cwd = resolve(import.meta.dirname, '..');
 const PER_FILE_TIMEOUT_MS = 240_000;
 
+// بيئة اختبار حتمية: لا تعتمد على ملف .env المحلي (غير المتعقَّب). ما يمرّ هنا هو ما
+// يمرّ في CI حرفياً، فلا يمرّ اختبار محلياً ويفشل على الخادم بسبب سرّ موجود في .env فقط.
+//   • DATABASE_URL: قيمة تُرضي التحقّق عند الاستيراد؛ كل ملف قاعدة بيانات يقيم قاعدته
+//     المضمَّنة ويضبط المتغيّر بنفسه قبل أول استعلام.
+//   • مفاتيح التشفير: 32 بايت اصطناعية (base64) لاختبارات تيليجرام/البوت. لا صلة لها بأي
+//     مفتاح حقيقي، ووجودها شرط لتجزئة بصمة الرقم وتشفير الجلسة داخل الاختبارات.
+const TEST_ENV = {
+  NODE_ENV: 'test',
+  LOG_LEVEL: process.env.LOG_LEVEL ?? 'silent',
+  DATABASE_URL: 'postgres://test:test@127.0.0.1:5432/test_placeholder',
+  TG_SESSION_ENC_KEY: Buffer.alloc(32, 0x11).toString('base64'),
+  TG_BOT_ENC_KEY: Buffer.alloc(32, 0x22).toString('base64'),
+};
+const childEnv = { ...process.env, ...TEST_ENV };
+
 const files = readdirSync(testDir)
   .filter((name) => name.endsWith('.test.ts'))
   .sort();
@@ -35,7 +50,7 @@ function spawnTests(filesToRun, extraArgs = [], onOutput) {
     const child = spawn(
       process.execPath,
       ['--import', 'tsx', '--test', ...extraArgs, ...filesToRun.map((file) => join(testDir, file))],
-      { stdio: onOutput ? ['ignore', 'pipe', 'pipe'] : 'inherit', env: process.env, cwd },
+      { stdio: onOutput ? ['ignore', 'pipe', 'pipe'] : 'inherit', env: childEnv, cwd },
     );
     if (onOutput) {
       child.stdout.on('data', (chunk) => onOutput(String(chunk)));
@@ -73,7 +88,7 @@ for (const file of dbFiles) {
   let timedOut = false;
   const child = spawn(process.execPath, ['--import', 'tsx', '--test', join(testDir, file)], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: process.env,
+    env: childEnv,
     cwd,
   });
   const timer = setTimeout(() => {
