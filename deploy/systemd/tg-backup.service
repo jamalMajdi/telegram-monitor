@@ -1,0 +1,32 @@
+# نسخة احتياطية يومية لقاعدة البيانات (P4-ز) — تُدار عبر tg-backup.timer.
+#
+# السكربت يتحقق من البصمة، يُشذّب النسخ القديمة، ويفشل بصدق (exit != 0) فيراه systemd.
+# النسخ في /var/backups/tg-monitor (صلاحيات 700، يملكها tgmon).
+#
+#   systemctl start tg-backup           # تشغيل فوري
+#   systemctl list-timers tg-backup.timer
+
+[Unit]
+Description=TG Monitor — database backup
+Documentation=file:///opt/tg-monitor/docs/runbook.md
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=tgmon
+Group=tgmon
+EnvironmentFile=/etc/tg-monitor/api.env
+Environment=BACKUP_DIR=/var/backups/tg-monitor
+Environment=BACKUP_KEEP=14
+ExecStart=/opt/tg-monitor/deploy/scripts/backup.sh
+StateDirectory=tg-monitor-backups
+ReadWritePaths=/var/backups/tg-monitor
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tg-backup
+Nice=10
+IOSchedulingClass=idle

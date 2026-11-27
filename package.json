@@ -1,0 +1,22 @@
+{
+  "name": "telegram-monitor",
+  "private": true,
+  "version": "0.1.0",
+  "description": "نظام مراقبة وتجميع رسائل تيليجرام متعدد المستخدمين — المرحلة الأولى: تأسيس الهوية والبنية الأساسية",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:db": "node scripts/dev-db.mjs",
+    "migrate": "npm --workspace @tg/api run migrate",
+    "dev:api": "npm --workspace @tg/api run dev",
+    "dev:web": "npm --workspace @tg/web run dev",
+    "build": "npm --workspace @tg/api run build && npm --workspace @tg/web run build",
+    "test": "npm --workspace @tg/api test",
+    "smoke:web": "npm --workspace @tg/web run smoke"
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}

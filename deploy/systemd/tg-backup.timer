@@ -1,0 +1,17 @@
+# جدولة النسخ الاحتياطي: كل يوم 03:17 (خارج ساعات الذروة، ودقيقة غير مستديرة لتجنّب التزاحم).
+#
+# هذا يحقّق RPO = 24 ساعة. لتقليله إلى ساعة: OnCalendar=hourly مع BACKUP_KEEP=168 (أسبوع).
+# **مهم**: النسخ على نفس القرص لا تحمي من تلف القرص — انسخ المجلد إلى مضيف/تخزين آخر (runbook §6).
+
+[Unit]
+Description=TG Monitor — daily backup timer
+Documentation=file:///opt/tg-monitor/docs/runbook.md
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=300
+Persistent=true
+Unit=tg-backup.service
+
+[Install]
+WantedBy=timers.target

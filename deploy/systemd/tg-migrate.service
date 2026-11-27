@@ -1,0 +1,36 @@
+# تطبيق الترحيلات قبل تشغيل الخدمة (P4-ز).
+#
+# الترحيلات أمامية فقط (forward-only) ومُبصَّمة في schema_migrations: تشغيلها مرتين آمن.
+# لا تعمل بلا قاعدة بيانات جاهزة؛ تفشل الخدمة إن فشلت هي (Requires=).
+#
+#   systemctl start tg-migrate     # يدوياً عند الترقية
+#   journalctl -u tg-migrate -n 50
+
+[Unit]
+Description=TG Monitor — apply database migrations
+Documentation=file:///opt/tg-monitor/docs/runbook.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+# فشل الترحيل يمنع تشغيل الخدمة المرتبطة بها.
+Before=tg-api.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=tgmon
+Group=tgmon
+WorkingDirectory=/opt/tg-monitor/apps/api
+EnvironmentFile=/etc/tg-monitor/api.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/db/migrate.js
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tg-migrate
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/opt/tg-monitor
+
+[Install]
+WantedBy=multi-user.target

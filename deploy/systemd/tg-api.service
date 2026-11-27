@@ -1,0 +1,73 @@
+# خدمة النظام الرئيسية (P4-ز).
+#
+# قرار معماري صريح: **وحدة واحدة** لا وحدتان.
+# التطبيق يشغّل داخل العملية الواحدة: خادم API + عامل النشر + مشغّل الاحتفاظ + مهام الالتقاط الخلفية.
+# تشغيل وحدة «عامل» ثانية بنفس الكود يعني نسختين تستهلكان نفس الطابور وتتنافسان على الأجزاء،
+# وتضاعف استعادة اتصالات تيليجرام. الفصل عند الحاجة يكون بقرار موثَّق لا بالنسخ.
+#
+# التركيب:
+#   install -o root -g root -m 644 deploy/systemd/tg-api.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now tg-api
+#
+# توقّف الخدمة يُغلق الجلسات بلطف (SIGTERM → إغلاق الطابور والاتصالات → 10 ثوانٍ سقفاً).
+
+[Unit]
+Description=TG Monitor API + worker
+Documentation=file:///opt/tg-monitor/docs/runbook.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+# لا يُعيد systemd التشغيل قبل تطبيق الترحيلات (tg-migrate.service).
+Requires=tg-migrate.service
+After=tg-migrate.service
+
+[Service]
+Type=simple
+User=tgmon
+Group=tgmon
+WorkingDirectory=/opt/tg-monitor/apps/api
+EnvironmentFile=/etc/tg-monitor/api.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=5
+# العامل يستخدم leases؛ مهلة إيقاف طويلة قد تُبقي جزءاً «مرسلاً» بلا نتيجة، فنغلق بسرعة.
+TimeoutStopSec=30
+KillSignal=SIGTERM
+KillMode=mixed
+LimitNOFILE=65535
+
+# ——— تقوية (Hardening) ———
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+# الكتابة مسموحة فقط لما يحتاجه التطبيق فعلاً (سجلات اختيارية).
+ReadWritePaths=/var/log/tg-monitor
+StateDirectory=tg-monitor
+LogsDirectory=tg-monitor
+
+# ——— الموارد: حدود تُحمي القاعدة والجيران ———
+# سقف الذاكرة مُقاس على الاستخدام الفعلي + هامش؛ لا يمنع العمل الطبيعي.
+MemoryMax=1G
+TasksMax=512
+# السجلات تذهب إلى journald (لا LOG_FILE) فتبقى موحّدة وقابلة للتدوير.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tg-api
+
+[Install]
+WantedBy=multi-user.target

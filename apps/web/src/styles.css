@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+  }
+  body {
+    @apply bg-slate-50 text-slate-800 antialiased;
+  }
+  /* عناصر النموذج ترث الاتجاه من الصفحة (RTL) */
+  input,
+  textarea,
+  select,
+  button {
+    font-family: inherit;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-slate-200 bg-white p-6 shadow-sm;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  }
+  .btn-secondary {
+    @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+  }
+  .btn-danger {
+    @apply btn bg-rose-600 text-white hover:bg-rose-700;
+  }
+  .field-label {
+    @apply mb-1 block text-sm font-medium text-slate-700;
+  }
+  .field-input {
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100;
+  }
+  /* اسم مختصر للنماذج في صفحات التشغيل (كان مستخدماً بلا تعريف ⇒ عناصر بلا تنسيق). */
+  .input {
+    @apply field-input;
+  }
+  /* نسخة مصغّرة للتحكم داخل صفوف الجداول. */
+  .input-mini {
+    @apply w-auto px-2 py-1 text-xs;
+  }
+  .btn-mini {
+    @apply inline-flex items-center justify-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  /* عنوان بطاقة موحّد (يستخدمه لوحة التحكم وصفحات التشغيل). */
+  .card-title {
+    @apply text-lg font-bold text-slate-800;
+  }
+  /* جدول بيانات بسيط بلا مكتبة: رأس هادئ وحدود أفقية فقط. */
+  .table {
+    @apply w-full text-right text-sm;
+  }
+  .table thead {
+    @apply bg-slate-50 text-xs text-slate-500;
+  }
+  .table th {
+    @apply px-4 py-3 font-medium;
+  }
+  .table td {
+    @apply border-t border-slate-100 px-4 py-2;
+  }
+}
