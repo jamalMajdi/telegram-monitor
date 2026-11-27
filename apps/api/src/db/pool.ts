@@ -11,7 +11,9 @@ let pool: pg.Pool | null = null;
 export function getPool(): pg.Pool {
   if (!pool) {
     pool = new Pool({
-      connectionString: env.DATABASE_URL,
+      // يُقرأ الرابط من process.env وقت إنشاء المجمع (وليس وقت استيراد الوحدة)،
+      // حتى تلتقط الاختبارات قاعدة البيانات المؤقتة التي تُشغّلها في before().
+      connectionString: process.env.DATABASE_URL ?? env.DATABASE_URL,
       max: env.DB_POOL_MAX,
       connectionTimeoutMillis: env.DB_CONNECT_TIMEOUT_MS,
       idleTimeoutMillis: 30_000,
