@@ -16,13 +16,27 @@ const dom = new JSDOM('<!doctype html><html lang="ar" dir="rtl"><body><div id="r
   pretendToBeVisual: true,
 });
 const globals = globalThis as unknown as Record<string, unknown>;
-globals.window = dom.window;
-globals.document = dom.window.document;
-globals.navigator = dom.window.navigator;
-globals.HTMLElement = dom.window.HTMLElement;
-globals.Node = dom.window.Node;
-globals.Event = dom.window.Event;
-globals.IS_REACT_ACT_ENVIRONMENT = true;
+// Node 22 يعرّف navigator كثابت عام للقراءة فقط، فالإسناد المباشر يرمي TypeError هناك
+// (بينما ينجح على Node 20). نُسند، وإن فشل الإسناد نُعرّف الخاصية صراحةً — سلوك واحد على الإصدارين.
+function defineGlobal(name: string, value: unknown): void {
+  try {
+    globals[name] = value;
+  } catch {
+    try {
+      Object.defineProperty(globals, name, { value, configurable: true, writable: true });
+    } catch {
+      // خاصية غير قابلة لإعادة التعريف على هذا الإصدار: نُكمل بعامّ Node الأصلي،
+      // فلا يعتمد أي فحص على قيمة navigator.
+    }
+  }
+}
+defineGlobal('window', dom.window);
+defineGlobal('document', dom.window.document);
+defineGlobal('navigator', dom.window.navigator);
+defineGlobal('HTMLElement', dom.window.HTMLElement);
+defineGlobal('Node', dom.window.Node);
+defineGlobal('Event', dom.window.Event);
+defineGlobal('IS_REACT_ACT_ENVIRONMENT', true);
 
 const { createElement } = await import('react');
 const { act } = await import('react');
