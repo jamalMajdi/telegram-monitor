@@ -1,0 +1,112 @@
+name: Deploy
+
+# نشر إلى الخادم بطريقتين — اختر واحدة عبر متغيّر المستودع DEPLOY_MODE:
+#   build  (افتراضي)  بناء الصورة على الخادم نفسه. لا سجل صور، لا توكن، لا حدود سحب.
+#                     الأنسب لآلة واحدة مجانية.
+#   image             بناء صورة multi-arch على GitHub ودفعها إلى GHCR ثم سحبها على الخادم.
+#                     الأنسب لو أردت آلة أضعف (بناء GitHub أسرع وأخف على الخادم).
+#
+# الأسرار المطلوبة (Settings → Secrets and variables → Actions):
+#   DEPLOY_HOST     عنوان IP العام للخادم
+#   DEPLOY_USER     مستخدم النشر (عضو مجموعة docker)
+#   DEPLOY_SSH_KEY  المفتاح الخاص (ed25519) — والمفتاح العام في ~/.ssh/authorized_keys
+#   DEPLOY_KNOWN_HOSTS  (مستحسن) مخرجات ssh-keyscan -H <ip> — يمنع هجمات الوسيط
+# والمتغيّرات (Variables): DEPLOY_MODE = build | image
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'طريقة النشر'
+        type: choice
+        options: [build, image]
+        default: build
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write # لدفع الصورة إلى GHCR في وضع image
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  # ── وضع image: بناء متعدّد المعمارية ودفعه ─────────────────────────────────
+  build-image:
+    if: ${{ github.event.inputs.mode == 'image' || (github.ref_type == 'tag' && vars.DEPLOY_MODE == 'image') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: تسجيل الدخول إلى GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        name: وسم الصورة
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: بناء ودفع (amd64 + arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── النشر على الخادم ──────────────────────────────────────────────────────
+  deploy:
+    needs: [build-image]
+    # يعمل أيضاً إن تخطّينا build-image (وضع build): الشروط تُقيَّم بحذر هنا.
+    if: ${{ always() && (needs.build-image.result == 'success' || needs.build-image.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: تجهيز المفتاح والثقة بالمضيف
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "${{ secrets.DEPLOY_KNOWN_HOSTS }}" ]; then
+            printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" > ~/.ssh/known_hosts 2>/dev/null
+          fi
+
+      - name: النشر
+        env:
+          MODE: ${{ github.event.inputs.mode || vars.DEPLOY_MODE || 'build' }}
+          TAG: ${{ needs.build-image.outputs.tag }}
+        run: |
+          set -euo pipefail
+          SSH="ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o ConnectTimeout=15 ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}"
+          if [ "$MODE" = "image" ]; then
+            $SSH "bash /opt/tg-monitor/src/deploy/scripts/deploy.sh image ${TAG:-latest}"
+          else
+            $SSH "bash /opt/tg-monitor/src/deploy/scripts/deploy.sh build"
+          fi
+
+      - name: فحص خارجي بعد النشر
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://${{ vars.PUBLIC_DOMAIN }}/healthz" || true)
+            if [ "$code" = "200" ]; then echo "✅ /healthz = 200"; exit 0; fi
+            echo "محاولة $i: $code"; sleep 10
+          done
+          echo "❌ فشل الفحص الخارجي بعد النشر"; exit 1

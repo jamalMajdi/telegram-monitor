@@ -1,0 +1,53 @@
+name: CI
+
+# بوابة الجودة على كل دفع/طلب دمج: نفس ما نُفِّذ محلياً قبل التسليم.
+# (601 اختباراً · tsc للطرفين · فحص واجهة · بناء إنتاج)
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # دفعة جديدة على نفس الفرع تُلغي السابقة: لا نُهدر دقائق على نسخة قديمة.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: البوابة الكاملة
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # `npm ci` حتمي: يعتمد package-lock فقط (لا يحدّث اعتماديات بصمت).
+      - name: تثبيت الاعتماديات
+        run: npm ci --no-audit --no-fund
+
+      - name: فحص الأنواع (API)
+        run: npm --workspace @tg/api run typecheck
+
+      - name: فحص الأنواع (الواجهة)
+        run: npm --workspace @tg/web run typecheck
+
+      # اختبارات الـAPI تُقيم PostgreSQL مضمَّنة (embedded-postgres) — لا خدمة خارجية.
+      - name: اختبارات API (601)
+        run: npm --workspace @tg/api test
+
+      - name: فحص صفحات الواجهة
+        run: npm run smoke:web
+
+      - name: بناء الإنتاج
+        run: npm run build
+
+      - name: بناء صورة Docker (تحقّق فقط، بلا دفع)
+        run: docker build -t tg-monitor:ci .
